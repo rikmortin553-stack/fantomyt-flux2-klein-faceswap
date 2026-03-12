@@ -39,15 +39,14 @@ install_custom_node() {
   cd "$COMFY_RUNTIME"
 }
 
-# Workflow-derived custom nodes
+# Custom nodes from workflow
 install_custom_node "https://github.com/rgthree/rgthree-comfy.git" "rgthree-comfy"
 install_custom_node "https://github.com/yolain/ComfyUI-Easy-Use.git" "ComfyUI-Easy-Use"
 
-# Added intentionally so the Manager button is available in ComfyUI UI
+# Added intentionally so Manager button exists in UI
 install_custom_node "https://github.com/ltdrdata/ComfyUI-Manager.git" "ComfyUI-Manager"
 
-# Protect GPU ONNX after custom node installs.
-# ComfyUI-Easy-Use may pull CPU-only onnxruntime in some environments.
+# Fix ONNX after custom node installs
 pip uninstall -y onnxruntime onnxruntime-gpu || true
 pip install --no-deps --force-reinstall onnxruntime-gpu==1.24.3 || true
 
@@ -95,6 +94,40 @@ download_file() {
   chmod 666 "$dst_dir/$filename" || true
 }
 
+download_hf_file() {
+  local dst_dir="$1"
+  local filename="$2"
+  local url="$3"
+
+  if [ -s "$dst_dir/$filename" ]; then
+    echo "[skip] $filename already exists"
+    return 0
+  fi
+
+  if [ -z "${HF_TOKEN:-}" ]; then
+    echo "[error] HF_TOKEN not set, cannot download $filename from Hugging Face gated repo"
+    exit 1
+  fi
+
+  echo "[download] $filename from Hugging Face"
+
+  if ! aria2c \
+    --allow-overwrite=true \
+    --auto-file-renaming=false \
+    --check-certificate=false \
+    --header="Authorization: Bearer ${HF_TOKEN}" \
+    -x 16 -s 16 -k 1M \
+    -d "$dst_dir" -o "$filename" "$url"; then
+    wget \
+      --header="Authorization: Bearer ${HF_TOKEN}" \
+      --content-disposition \
+      -O "$dst_dir/$filename" "$url"
+  fi
+
+  test -s "$dst_dir/$filename"
+  chmod 666 "$dst_dir/$filename" || true
+}
+
 download_civitai_file() {
   local dst_dir="$1"
   local filename="$2"
@@ -123,8 +156,8 @@ download_civitai_file() {
     -d "$dst_dir" -o "$filename" "$url"; then
     echo "[warn] aria2c failed for $filename, retrying with wget"
     if ! wget --content-disposition -O "$dst_dir/$filename" "$url"; then
-      echo "[error] Failed to download $filename from CivitAI."
-      echo "[hint] If CivitAI returns 403, set CIVITAI_TOKEN in your RunPod template."
+      echo "[error] Failed to download $filename from CivitAI"
+      echo "[hint] Add CIVITAI_TOKEN to your RunPod template if CivitAI returns 403"
       exit 1
     fi
   fi
@@ -134,11 +167,11 @@ download_civitai_file() {
 }
 
 # =========================
-# Public models
+# Public / gated models
 # =========================
 
 # diffusion_models
-download_file "models/diffusion_models" "flux-2-klein-9b.safetensors" "https://huggingface.co/black-forest-labs/FLUX.2-klein-9B/resolve/main/flux-2-klein-9b.safetensors?download=true"
+download_hf_file "models/diffusion_models" "flux-2-klein-9b.safetensors" "https://huggingface.co/black-forest-labs/FLUX.2-klein-9B/resolve/main/flux-2-klein-9b.safetensors?download=true"
 
 # text_encoders
 download_file "models/text_encoders" "qwen_3_8b.safetensors" "https://huggingface.co/DenRakEiw/qwen3_8b.safetensors/resolve/main/qwen3_8b.safetensors?download=true"
