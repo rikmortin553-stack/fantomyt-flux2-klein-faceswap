@@ -1,16 +1,31 @@
 #!/bin/bash
 set -euo pipefail
 
+source /opt/venv/bin/activate
+
 WORKDIR=/workspace
 COMFY_RUNTIME=/workspace/ComfyUI
-COMFY_CACHE=/comfy-cache
+COMFY_BUILD=/comfy-build
 CUSTOM_NODES_DIR="$COMFY_RUNTIME/custom_nodes"
 
 mkdir -p "$WORKDIR" "$WORKDIR/output" "$WORKDIR/input" "$WORKDIR/temp" "$WORKDIR/models"
 chmod -R 777 "$WORKDIR" || true
 
+# Runtime sanity
+nvidia-smi || true
+python --version || true
+python - <<'PY' || true
+import torch
+print("[torch] version:", torch.__version__)
+print("[torch] cuda available:", torch.cuda.is_available())
+print("[torch] cuda device count:", torch.cuda.device_count())
+if torch.cuda.is_available():
+    print("[torch] device 0:", torch.cuda.get_device_name(0))
+PY
+
+# Restore ComfyUI from image cache into /workspace
 if [ ! -d "$COMFY_RUNTIME" ]; then
-  cp -r "$COMFY_CACHE" "$COMFY_RUNTIME"
+  cp -r "$COMFY_BUILD" "$COMFY_RUNTIME"
 fi
 chmod -R 777 "$COMFY_RUNTIME" || true
 
@@ -39,11 +54,11 @@ install_custom_node() {
   cd "$COMFY_RUNTIME"
 }
 
-# Custom nodes from workflow
+# Workflow-derived custom nodes
 install_custom_node "https://github.com/rgthree/rgthree-comfy.git" "rgthree-comfy"
 install_custom_node "https://github.com/yolain/ComfyUI-Easy-Use.git" "ComfyUI-Easy-Use"
 
-# Added intentionally so Manager button exists in UI
+# Added intentionally so the Manager button exists in UI
 install_custom_node "https://github.com/ltdrdata/ComfyUI-Manager.git" "ComfyUI-Manager"
 
 # Fix ONNX after custom node installs
@@ -167,7 +182,7 @@ download_civitai_file() {
 }
 
 # =========================
-# Public / gated models
+# Models
 # =========================
 
 # diffusion_models
@@ -185,6 +200,7 @@ download_file "models/upscale_models" "4xPurePhoto-RealPLSKR.pth" "https://huggi
 # loras
 download_civitai_file "models/loras" "igbaddie-klein.safetensors" "https://civitai.com/api/download/models/2745709?type=Model&format=SafeTensor"
 
+# Jupyter for RunPod
 jupyter lab \
   --ip=0.0.0.0 \
   --port=8888 \
@@ -197,4 +213,5 @@ jupyter lab \
   --ServerApp.root_dir=/workspace \
   > /workspace/jupyter.log 2>&1 &
 
+# ComfyUI
 python main.py --listen 0.0.0.0 --port 3000 --highvram --disable-auto-launch
